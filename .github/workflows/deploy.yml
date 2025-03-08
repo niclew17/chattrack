@@ -37,16 +37,6 @@ jobs:
           pip install -r requirements.txt
           pip install awscli pytest pytest-cov moto>=4.0.0 boto3 requests
 
-      - name: Run Unit Tests
-        run: |
-          echo "Running unit tests..."
-          # Add current directory to PYTHONPATH
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          # Create test directories if they don't exist
-          mkdir -p tests/unit tests/integration
-          # Run tests with coverage
-          pytest tests/unit/ --cov=. --cov-report=term-missing -v
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -144,10 +134,20 @@ jobs:
           echo "API Endpoint: $API_ENDPOINT"
           echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
 
+      - name: Create Test Directories
+        run: |
+          mkdir -p tests/unit tests/integration
+
+      - name: Run Unit Tests
+        run: |
+          echo "Running unit tests..."
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/unit/ --cov=. --cov-report=term-missing -v
+
       - name: Run Integration Tests
         if: success()
         env:
           API_ENDPOINT: ${{ steps.get-outputs.outputs.api_endpoint }}
         run: |
           echo "Running integration tests against $API_ENDPOINT"
-          pytest tests/integration/ --api-endpoint=$API_ENDPOINT
+          pytest tests/integration/ --api-endpoint=$API_ENDPOINT -v

@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  STACK_NAME: chatgpt-usage-tracker
+  AWS_REGION: us-east-1
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -17,16 +21,26 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Install AWS CLI
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install awscli
-
-      - name: Install AWS SAM CLI
-        run: |
+          # Install AWS SAM CLI
           wget https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-x86_64.zip
           unzip aws-sam-cli-linux-x86_64.zip -d sam-installation
           sudo ./sam-installation/install
+          # Verify installations
+          echo "AWS CLI Version:"
+          aws --version
+          echo "SAM CLI Version:"
           sam --version
 
       - name: Configure AWS Credentials
@@ -34,21 +48,58 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS Configuration
+        run: |
+          # Check AWS credentials
+          aws sts get-caller-identity
+          # Check S3 bucket exists
+          aws s3api head-bucket --bucket ${{ secrets.AWS_S3_BUCKET }} || {
+            echo "Error: S3 bucket ${{ secrets.AWS_S3_BUCKET }} not found or not accessible"
+            exit 1
+          }
 
       - name: SAM Build
-        run: sam build
+        run: |
+          echo "Building the application..."
+          sam build
 
       - name: SAM Deploy
         run: |
+          echo "Deploying the application..."
           sam deploy \
-            --stack-name chatgpt-usage-tracker \
+            --stack-name ${{ env.STACK_NAME }} \
             --s3-bucket ${{ secrets.AWS_S3_BUCKET }} \
             --capabilities CAPABILITY_IAM \
-            --region us-east-1 \
+            --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
 
-      - name: Get API Endpoint
+      - name: Get and Display API Endpoint
         run: |
-          API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name chatgpt-usage-tracker --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text --region us-east-1)
+          echo "Fetching API Endpoint..."
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
           echo "API Endpoint: $API_ENDPOINT"
+          # Save the endpoint to GitHub output
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Check Deployment Status
+        run: |
+          # Verify stack exists and is in good state
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].StackStatus' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          if [[ $STACK_STATUS != *"COMPLETE"* ]]; then
+            echo "Warning: Stack status is $STACK_STATUS"
+            if [[ $STACK_STATUS == *"FAILED"* || $STACK_STATUS == *"ROLLBACK"* ]]; then
+              echo "Deployment failed with status: $STACK_STATUS"
+              exit 1
+            fi
+          fi
+          echo "Deployment completed successfully with status: $STACK_STATUS"

@@ -11,7 +11,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize DynamoDB client
-dynamodb = boto3.resource('dynamodb')
+region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+dynamodb = boto3.resource('dynamodb', region_name=region)
 table_name = os.environ.get('DYNAMODB_TABLE', 'chatgpt_usage_tracking')
 table = dynamodb.Table(table_name)
 

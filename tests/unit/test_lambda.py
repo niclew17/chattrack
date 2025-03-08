@@ -7,6 +7,10 @@ import boto3
 
 # Add the parent directory to the path so we can import the lambda function
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Set AWS region for tests
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
 from lambda_function import lambda_handler
 
 @pytest.fixture

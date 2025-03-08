@@ -1,5 +1,6 @@
 import json
 import boto3
+import uuid
 import os
 from datetime import datetime
 import logging
@@ -19,45 +20,10 @@ def authorize_request(event, organization_id):
     # we don't need to validate the caller's identity
     return True
 
-# Check rate limits for the organization
+# Simplified function that always returns True (no rate limiting)
 def check_rate_limits(organization_id):
-    # Simple rate limiting using DynamoDB
-    # Limit to 1000 requests per hour per organization
-    try:
-        rate_limit_table_name = os.environ.get('RATE_LIMIT_TABLE', table_name)
-        rate_limit_table = dynamodb.Table(rate_limit_table_name)
-        
-        # Current hour as the time window
-        current_hour = datetime.now().strftime('%Y-%m-%d-%H')
-        rate_key = f"{organization_id}:{current_hour}"
-        
-        # Update the request count atomically
-        response = rate_limit_table.update_item(
-            Key={
-                'rate_key': rate_key
-            },
-            UpdateExpression="ADD request_count :inc",
-            ExpressionAttributeValues={
-                ':inc': 1,
-                ':limit': 1000  # 1000 requests per hour
-            },
-            ConditionExpression="attribute_not_exists(request_count) OR request_count < :limit",
-            ReturnValues="UPDATED_NEW"
-        )
-        
-        # If we get here, the rate limit is not exceeded
-        return True
-    
-    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
-        # Rate limit exceeded
-        logger.warning(f"Rate limit exceeded for organization: {organization_id}")
-        return False
-    
-    except Exception as e:
-        # If there's an error, allow the request to proceed
-        # This prevents blocking legitimate requests due to rate limiting issues
-        logger.error(f"Error in rate limiting: {str(e)}")
-        return True
+    # Rate limiting removed
+    return True
 
 def lambda_handler(event, context):
     try:
@@ -98,31 +64,19 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Check rate limits for the organization
-        if not check_rate_limits(organization_id):
-            return {
-                'statusCode': 429,
-                'body': json.dumps({
-                    'error': 'Rate limit exceeded for organization'
-                })
-            }
-        
         # Calculate cost based on model and token usage
         # Pricing rates per 1,000,000 tokens (in USD) - update these as needed
         model_pricing = {
             # GPT-4 models
-            
-            'gpt-4.5-preview': {'input': 75.0, 'output': 150.0, 'cached_input': 37.5},
-            'gpt-4o-2024-08-06': {'input': 2.5, 'output': 10.0, 'cached_input': 1.25},
-            'gpt-4o-audio-preview-2024-12-17': {'input': 2.5, 'output': 10.0},
-            'gpt-4o-realtime-preview-2024-12-17': {'input': 5.0, 'output': 20.0, 'cached_input': 2.5},
-            'gpt-4o-mini-2024-07-18': {'input': 0.15, 'output': 0.60, 'cached_input': 0.075},
-            'gpt-4o-mini-audio-preview-2024-12-17': {'input': 0.15, 'output': 0.60},
-            'gpt-4o-mini-realtime-preview-2024-12-17': {'input': 0.60, 'output': 2.40, 'cached_input': 0.30},
-            'o1-2024-12-17': {'input': 15.0, 'output': 60.0, 'cached_input': 7.5},
-            'o3-mini-2025-01-31': {'input': 1.10, 'output': 4.40, 'cached_input': 0.55},
-            'o1-mini-2024-09-12': {'input': 1.10, 'output': 4.40, 'cached_input': 0.55},
-
+            'gpt-4': {'input': 30.0, 'output': 60.0},
+            'gpt-4-32k': {'input': 60.0, 'output': 120.0},
+            'gpt-4-turbo': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
+            'gpt-4-turbo-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
+            'gpt-4-vision-preview': {'input': 10.0, 'output': 30.0},
+            'gpt-4-1106-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
+            'gpt-4-0125-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
+            'gpt-4o': {'input': 5.0, 'output': 15.0, 'cached_input': 0.75},
+            'gpt-4o-2024-05-13': {'input': 5.0, 'output': 15.0, 'cached_input': 0.75},
             
             # GPT-3.5 models
             'gpt-3.5-turbo': {'input': 1.5, 'output': 2.0, 'cached_input': 0.3},
@@ -217,7 +171,8 @@ def lambda_handler(event, context):
                 'message': 'Usage data recorded successfully',
                 'organization_id': organization_id,
                 'user_id': user_id,
-                'total_cost': total_cost
+                'total_cost': total_cost,
+                'timestamp': timestamp
             })
         }
     

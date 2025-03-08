@@ -8,7 +8,6 @@ This AWS Lambda function provides a public API for organizations to track their 
 - **Per-Customer Usage Tracking**: Track API usage costs for each of your customers
 - **Minimal Data Storage**: Only stores essential information (organization ID, user ID, timestamp, cost)
 - **Simple Deployment**: Easy to deploy without complex encryption or authentication setup
-- **Built-in Rate Limiting**: Protects the API from abuse (1000 requests per hour per organization)
 - **Optimized Queries**: Efficient database structure for analyzing usage patterns
 
 ## Setup Instructions
@@ -156,5 +155,4 @@ All other fields (model_name, token counts, etc.) are used for cost calculation 
 
 The Lambda function handles various error cases:
 - Missing required fields (400 Bad Request)
-- Rate limiting (429 Too Many Requests) - Limited to 1000 requests per hour per organization
 - Internal server errors (500 Internal Server Error)

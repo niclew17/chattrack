@@ -44,29 +44,51 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Package Lambda Function
+      - name: Package and Upload Lambda
         run: |
           # Create a temporary directory for packaging
           mkdir -p package
 
           # Copy Lambda function and dependencies
           cp lambda_function.py package/
-          cp -r $(python -c "import site; print(site.getsitepackages()[0])")/* package/
+          pip install -r requirements.txt -t package/
+
+          # Show contents for debugging
+          echo "Contents of package directory:"
+          ls -la package/
 
           # Create deployment package
           cd package
-          zip -r ../${{ env.LAMBDA_ZIP }} .
+          zip -r ../${{ env.LAMBDA_ZIP }} ./*
           cd ..
 
-          # Get timestamp for unique S3 key
+          # Show zip contents for debugging
+          echo "Contents of zip file:"
+          unzip -l ${{ env.LAMBDA_ZIP }}
+
+          # Set S3 key with timestamp
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          echo "LAMBDA_S3_KEY=deployments/$TIMESTAMP/${{ env.LAMBDA_ZIP }}" >> $GITHUB_ENV
+          S3_KEY="deployments/$TIMESTAMP/${{ env.LAMBDA_ZIP }}"
+          echo "LAMBDA_S3_KEY=$S3_KEY" >> $GITHUB_ENV
 
           # Upload to S3
-          aws s3 cp ${{ env.LAMBDA_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/${{ env.LAMBDA_S3_KEY }}
+          echo "Uploading to s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY"
+          aws s3 cp ${{ env.LAMBDA_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY
+
+          # Verify upload
+          echo "Verifying S3 upload..."
+          aws s3api head-object --bucket ${{ secrets.AWS_S3_BUCKET }} --key $S3_KEY || {
+            echo "Failed to verify S3 upload"
+            exit 1
+          }
+          echo "S3 upload verified successfully"
 
       - name: Deploy CloudFormation Stack
         run: |
+          echo "Deploying with parameters:"
+          echo "DeploymentBucket: ${{ secrets.AWS_S3_BUCKET }}"
+          echo "DeploymentPackageKey: ${{ env.LAMBDA_S3_KEY }}"
+
           aws cloudformation deploy \
             --template-file template.yaml \
             --stack-name ${{ env.STACK_NAME }} \
@@ -74,3 +96,13 @@ jobs:
             --parameter-overrides \
               DeploymentBucket=${{ secrets.AWS_S3_BUCKET }} \
               DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }}
+
+      - name: Get Stack Outputs
+        run: |
+          # Get and display the API endpoint
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text)
+          echo "API Endpoint: $API_ENDPOINT"
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT

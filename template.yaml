@@ -12,6 +12,9 @@ Parameters:
   DeploymentPackageKey:
     Type: String
     Description: S3 key for Lambda deployment package
+  GetCostsPackageKey:
+    Type: String
+    Description: S3 key for Get Costs Lambda deployment package
 
 Resources:
   # DynamoDB Table for Usage Tracking
@@ -170,7 +173,7 @@ Resources:
     Properties:
       Code:
         S3Bucket: !Ref DeploymentBucket
-        S3Key: !Ref DeploymentPackageKey
+        S3Key: !Ref GetCostsPackageKey
       Handler: get_costs_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.9

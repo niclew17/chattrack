@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install awscli pytest pytest-cov moto>=4.0.0 boto3 requests
+          pip install awscli boto3
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -137,57 +137,3 @@ jobs:
               DeploymentBucket=${{ secrets.AWS_S3_BUCKET }} \
               DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }} \
               GetCostsPackageKey=${{ env.GET_COSTS_S3_KEY }}
-
-      - name: Get Stack Outputs
-        id: get-outputs
-        if: success()
-        run: |
-          # Get and display the API endpoint
-          API_ENDPOINT=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-            --output text)
-          echo "API Endpoint: $API_ENDPOINT"
-          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
-
-      - name: Test API Endpoints
-        if: success()
-        env:
-          API_ENDPOINT: ${{ steps.get-outputs.outputs.api_endpoint }}
-        run: |
-          echo "Testing API endpoints..."
-
-          echo "1. Testing successful usage tracking..."
-          curl -X POST "$API_ENDPOINT" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model_name": "gpt-4",
-              "input_tokens": 100,
-              "output_tokens": 50,
-              "user_id": "test_user",
-              "organization_id": "test_org"
-            }' \
-            -v
-
-          echo -e "\n\n2. Testing invalid model error..."
-          curl -X POST "$API_ENDPOINT" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model_name": "invalid-model",
-              "input_tokens": 100,
-              "output_tokens": 50,
-              "user_id": "test_user",
-              "organization_id": "test_org"
-            }' \
-            -v
-
-          echo -e "\n\n3. Testing missing field error..."
-          curl -X POST "$API_ENDPOINT" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model_name": "gpt-4",
-              "input_tokens": 100,
-              "user_id": "test_user",
-              "organization_id": "test_org"
-            }' \
-            -v

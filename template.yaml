@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ChatGPT API Usage Tracking System
+
+Parameters:
+  TableName:
+    Type: String
+    Default: chatgpt_usage_tracking
+    Description: Name of the DynamoDB table for storing usage data
+
+Resources:
+  # DynamoDB Table
+  ChatGPTUsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: organization_id
+          KeyType: HASH
+        - AttributeName: user_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: OrgTimestampIndex
+          KeySchema:
+            - AttributeName: organization_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: UserTimestampIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # Lambda Function
+  ChatGPTUsageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref TableName
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TableName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /track
+            Method: post
+
+  # API Gateway
+  ChatGPTUsageApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+            Identity:
+              Header: Authorization
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for the ChatGPT usage tracking function
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/track"
+  
+  DynamoDBTableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref TableName
+  
+  LambdaFunction:
+    Description: Lambda function name
+    Value: !Ref ChatGPTUsageFunction 

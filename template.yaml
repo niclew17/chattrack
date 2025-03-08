@@ -17,6 +17,8 @@ Resources:
   # DynamoDB Table for Usage Tracking
   ChatGPTUsageTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Ref TableName
       BillingMode: PAY_PER_REQUEST
@@ -53,6 +55,8 @@ Resources:
   # Lambda Function Role
   LambdaExecutionRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -79,6 +83,8 @@ Resources:
   # Lambda Function
   ChatGPTUsageFunction:
     Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Code:
         S3Bucket: !Ref DeploymentBucket
@@ -97,12 +103,16 @@ Resources:
   # API Gateway
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Name: ChatGPT Usage Tracking API
       Description: API for tracking ChatGPT usage
 
   ApiResource:
     Type: AWS::ApiGateway::Resource
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       RestApiId: !Ref ApiGateway
       ParentId: !GetAtt ApiGateway.RootResourceId
@@ -110,6 +120,8 @@ Resources:
 
   ApiMethod:
     Type: AWS::ApiGateway::Method
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       RestApiId: !Ref ApiGateway
       ResourceId: !Ref ApiResource
@@ -122,12 +134,16 @@ Resources:
 
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     DependsOn: ApiMethod
     Properties:
       RestApiId: !Ref ApiGateway
 
   ApiStage:
     Type: AWS::ApiGateway::Stage
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       RestApiId: !Ref ApiGateway
       DeploymentId: !Ref ApiDeployment
@@ -136,6 +152,8 @@ Resources:
   # Lambda Permission for API Gateway
   LambdaPermission:
     Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref ChatGPTUsageFunction

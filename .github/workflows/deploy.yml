@@ -83,6 +83,19 @@ jobs:
           }
           echo "S3 upload verified successfully"
 
+      - name: Check and Delete Failed Stack
+        run: |
+          # Check if stack exists and is in ROLLBACK_COMPLETE state
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack..."
+            aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
+            echo "Stack deleted successfully"
+          fi
+
       - name: Deploy CloudFormation Stack
         run: |
           echo "Deploying with parameters:"
@@ -98,6 +111,7 @@ jobs:
               DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }}
 
       - name: Get Stack Outputs
+        if: success()
         run: |
           # Get and display the API endpoint
           API_ENDPOINT=$(aws cloudformation describe-stacks \

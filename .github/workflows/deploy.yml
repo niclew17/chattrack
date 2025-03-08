@@ -51,7 +51,19 @@ jobs:
 
           # Copy Lambda function and dependencies
           cp lambda_function.py package/
-          pip install -r requirements.txt -t package/
+
+          # Install only required dependencies
+          pip install \
+            boto3==1.28.38 \
+            python-json-logger==2.0.7 \
+            -t package/
+
+          # Remove unnecessary files to reduce package size
+          cd package
+          find . -type d -name "__pycache__" -exec rm -rf {} +
+          find . -type d -name "*.dist-info" -exec rm -rf {} +
+          find . -type d -name "*.egg-info" -exec rm -rf {} +
+          cd ..
 
           # Show contents for debugging
           echo "Contents of package directory:"

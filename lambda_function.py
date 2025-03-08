@@ -2,7 +2,7 @@ import json
 import boto3
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 # Initialize logging
@@ -137,7 +137,7 @@ def lambda_handler(event, context):
         total_cost = input_cost + output_cost + cached_input_cost + reasoning_cost
         
         # Generate timestamp if not provided
-        timestamp = body.get('timestamp', datetime.now(datetime.UTC).isoformat())
+        timestamp = body.get('timestamp', datetime.now(timezone.utc).isoformat())
         
         # Create item to store in DynamoDB with organization and user as composite key
         item = {

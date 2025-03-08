@@ -9,7 +9,7 @@ Parameters:
     Description: Name of the DynamoDB table for storing usage data
 
 Resources:
-  # DynamoDB Table
+  # DynamoDB Table for Usage Tracking
   ChatGPTUsageTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -68,19 +68,6 @@ Resources:
           Properties:
             Path: /track
             Method: post
-
-  # API Gateway
-  ChatGPTUsageApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName: Prod
-      Auth:
-        DefaultAuthorizer: CognitoAuthorizer
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: !GetAtt UserPool.Arn
-            Identity:
-              Header: Authorization
 
 Outputs:
   ApiEndpoint:

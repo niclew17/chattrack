@@ -13,7 +13,7 @@ env:
   LAMBDA_ZIP: lambda-package.zip
 
 jobs:
-  deploy:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -35,7 +35,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install awscli
+          pip install awscli pytest pytest-cov moto boto3
+
+      - name: Run Unit Tests
+        run: |
+          echo "Running unit tests..."
+          pytest tests/unit/ --cov=. --cov-report=term-missing
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -123,6 +128,7 @@ jobs:
               DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }}
 
       - name: Get Stack Outputs
+        id: get-outputs
         if: success()
         run: |
           # Get and display the API endpoint
@@ -132,3 +138,11 @@ jobs:
             --output text)
           echo "API Endpoint: $API_ENDPOINT"
           echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Run Integration Tests
+        if: success()
+        env:
+          API_ENDPOINT: ${{ steps.get-outputs.outputs.api_endpoint }}
+        run: |
+          echo "Running integration tests against $API_ENDPOINT"
+          pytest tests/integration/ --api-endpoint=$API_ENDPOINT

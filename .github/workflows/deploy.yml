@@ -40,7 +40,12 @@ jobs:
       - name: Run Unit Tests
         run: |
           echo "Running unit tests..."
-          pytest tests/unit/ --cov=. --cov-report=term-missing
+          # Add current directory to PYTHONPATH
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          # Create test directories if they don't exist
+          mkdir -p tests/unit tests/integration
+          # Run tests with coverage
+          pytest tests/unit/ --cov=. --cov-report=term-missing -v
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1

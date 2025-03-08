@@ -1,18 +1,23 @@
 import json
+import os
+import sys
 import pytest
 from moto import mock_aws
 import boto3
+
+# Add the parent directory to the path so we can import the lambda function
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from lambda_function import lambda_handler
 
 @pytest.fixture
 def aws_credentials():
     """Mocked AWS Credentials for moto."""
-    import os
     os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
     os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
     os.environ['AWS_SECURITY_TOKEN'] = 'testing'
     os.environ['AWS_SESSION_TOKEN'] = 'testing'
     os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+    os.environ['DYNAMODB_TABLE'] = 'chatgpt_usage_tracking'  # Set the table name env var
 
 @pytest.fixture
 def dynamodb_table(aws_credentials):

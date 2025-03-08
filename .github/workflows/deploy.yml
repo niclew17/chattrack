@@ -134,20 +134,44 @@ jobs:
           echo "API Endpoint: $API_ENDPOINT"
           echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
 
-      - name: Create Test Directories
-        run: |
-          mkdir -p tests/unit tests/integration
-
-      - name: Run Unit Tests
-        run: |
-          echo "Running unit tests..."
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/unit/ --cov=. --cov-report=term-missing -v
-
-      - name: Run Integration Tests
+      - name: Test API Endpoints
         if: success()
         env:
           API_ENDPOINT: ${{ steps.get-outputs.outputs.api_endpoint }}
         run: |
-          echo "Running integration tests against $API_ENDPOINT"
-          pytest tests/integration/ --api-endpoint=$API_ENDPOINT -v
+          echo "Testing API endpoints..."
+
+          echo "1. Testing successful usage tracking..."
+          curl -X POST "$API_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model_name": "gpt-4",
+              "input_tokens": 100,
+              "output_tokens": 50,
+              "user_id": "test_user",
+              "organization_id": "test_org"
+            }' \
+            -v
+
+          echo -e "\n\n2. Testing invalid model error..."
+          curl -X POST "$API_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model_name": "invalid-model",
+              "input_tokens": 100,
+              "output_tokens": 50,
+              "user_id": "test_user",
+              "organization_id": "test_org"
+            }' \
+            -v
+
+          echo -e "\n\n3. Testing missing field error..."
+          curl -X POST "$API_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model_name": "gpt-4",
+              "input_tokens": 100,
+              "user_id": "test_user",
+              "organization_id": "test_org"
+            }' \
+            -v

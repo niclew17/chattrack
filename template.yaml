@@ -6,6 +6,12 @@ Parameters:
     Type: String
     Default: chatgpt_usage_tracking
     Description: Name of the DynamoDB table for storing usage data
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+  DeploymentPackageKey:
+    Type: String
+    Description: S3 key for Lambda deployment package
 
 Resources:
   # DynamoDB Table for Usage Tracking
@@ -49,7 +55,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -60,7 +66,7 @@ Resources:
       Policies:
         - PolicyName: DynamoDBAccess
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -135,15 +141,6 @@ Resources:
       FunctionName: !Ref ChatGPTUsageFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/track
-
-Parameters:
-  DeploymentBucket:
-    Type: String
-    Description: S3 bucket containing Lambda deployment package
-
-  DeploymentPackageKey:
-    Type: String
-    Description: S3 key for Lambda deployment package
 
 Outputs:
   ApiEndpoint:

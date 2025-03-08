@@ -1,13 +1,23 @@
 import json
 import pytest
-from moto import mock_dynamodb
+from moto import mock_aws
 import boto3
 from lambda_function import lambda_handler
 
 @pytest.fixture
-def dynamodb_table():
-    with mock_dynamodb():
-        dynamodb = boto3.resource('dynamodb')
+def aws_credentials():
+    """Mocked AWS Credentials for moto."""
+    import os
+    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+    os.environ['AWS_SECURITY_TOKEN'] = 'testing'
+    os.environ['AWS_SESSION_TOKEN'] = 'testing'
+    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
+@pytest.fixture
+def dynamodb_table(aws_credentials):
+    with mock_aws():
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
         
         # Create the table
         table = dynamodb.create_table(
@@ -67,7 +77,7 @@ def test_lambda_handler_success(dynamodb_table):
     assert 'total_cost' in body
     assert 'timestamp' in body
 
-def test_lambda_handler_missing_field():
+def test_lambda_handler_missing_field(dynamodb_table):
     # Test event missing required field
     event = {
         'body': json.dumps({
@@ -88,7 +98,7 @@ def test_lambda_handler_missing_field():
     assert 'error' in body
     assert 'Missing required field' in body['error']
 
-def test_lambda_handler_invalid_model():
+def test_lambda_handler_invalid_model(dynamodb_table):
     # Test event with invalid model
     event = {
         'body': json.dumps({

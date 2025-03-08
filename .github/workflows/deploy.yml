@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main
-      - ci-cd-pipeline
-      - post_function
+      - get_function
   workflow_dispatch:
 
 env:

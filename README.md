@@ -103,6 +103,8 @@ Call this API immediately after each AI model request to track usage:
 
 ## Usage
 
+### 1. Track Usage (POST /track)
+
 Send a POST request to your API Gateway endpoint with the following JSON body:
 
 ```json
@@ -115,31 +117,38 @@ Send a POST request to your API Gateway endpoint with the following JSON body:
 }
 ```
 
-### Required Fields
+### 2. Get Usage Costs (GET /costs)
 
+Send a GET request to your API Gateway endpoint with the following query parameters:
+
+Required Parameters:
 - `organization_id`: Your organization's unique identifier
-- `model_name`: Name of the AI model used (e.g., "gpt-3.5-turbo", "gpt-4")
-- `input_tokens`: Number of input tokens used
-- `output_tokens`: Number of output tokens generated
 - `user_id`: Unique identifier for your customer
+- `start_date`: Start date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+- `end_date`: End date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
 
-### Optional Fields
+Example Request:
+```
+GET /costs?organization_id=org_12345&user_id=customer_6789&start_date=2024-03-01&end_date=2024-03-31
+```
 
-- `timestamp`: ISO format timestamp (auto-generated if not provided)
-- `cached_input_tokens`: Number of cached input tokens (for models that support caching)
-- `reasoning_tokens`: Number of reasoning tokens (for models that support reasoning)
-
-### Response
-
-Successful response:
+Successful Response:
 ```json
 {
-  "message": "Usage data recorded successfully",
   "organization_id": "org_12345",
   "user_id": "customer_6789",
-  "total_cost": 0.00875
+  "start_date": "2024-03-01T00:00:00",
+  "end_date": "2024-03-31T23:59:59",
+  "total_cost": 12.45,
+  "usage_count": 150,
+  "time_period_days": 31
 }
 ```
+
+The response includes:
+- `total_cost`: Sum of all costs for the specified period
+- `usage_count`: Number of API calls made during the period
+- `time_period_days`: Number of days between start_date and end_date
 
 ## Data Storage
 

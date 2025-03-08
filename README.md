@@ -1,167 +1,190 @@
-# ChatGPT API Usage Tracker
+# ChatGPT Usage Tracking API
 
-This AWS Lambda function provides a public API for organizations to track their customers' AI model usage costs. Organizations can use their own identifiers and track usage for their customers without complex authentication setup.
+This API allows you to track and retrieve ChatGPT usage costs across different models, organizations, and users.
 
-## Key Features
+## API Endpoints
 
-- **Self-Service Organization Management**: Organizations can use their own identifiers
-- **Per-Customer Usage Tracking**: Track API usage costs for each of your customers
-- **Minimal Data Storage**: Only stores essential information (organization ID, user ID, timestamp, cost)
-- **Simple Deployment**: Easy to deploy without complex encryption or authentication setup
-- **Optimized Queries**: Efficient database structure for analyzing usage patterns
+### 1. Track Usage (`POST /track`)
 
-## Setup Instructions
+Records usage data for ChatGPT API calls.
 
-### 1. Create a DynamoDB Table
+#### Request
 
-Create a DynamoDB table with the following configuration:
-- Table name: `chatgpt_usage_tracking` (or customize and set as environment variable)
-- Partition key: `organization_id` (String)
-- Sort key: `user_id` (String)
-- Global Secondary Indexes:
-  - Name: `OrgTimestampIndex`
-    - Partition key: `organization_id` (String)
-    - Sort key: `timestamp` (String)
-  - Name: `UserTimestampIndex`
-    - Partition key: `user_id` (String)
-    - Sort key: `timestamp` (String)
+```http
+POST /track
+Content-Type: application/json
 
-### 2. Deploy the Lambda Function
+{
+    "model_name": "gpt-4",
+    "input_tokens": 100,
+    "output_tokens": 50,
+    "user_id": "user_123",
+    "organization_id": "org_456",
+    "cached_input_tokens": 20,     // Optional
+    "reasoning_tokens": 30         // Optional
+}
+```
 
-1. Create a new Lambda function in AWS:
-   - Runtime: Python 3.9+
-   - Handler: lambda_function.lambda_handler
-   - Architecture: x86_64 or arm64
+#### Supported Models and Pricing (per 1M tokens)
 
-2. Set up environment variables:
-   - `DYNAMODB_TABLE`: Name of your DynamoDB table (default: `chatgpt_usage_tracking`)
+##### GPT-4 Models
 
-3. Configure IAM permissions:
-   - DynamoDB access permissions for your table
+- `gpt-4`: Input $30.00, Output $60.00
+- `gpt-4-32k`: Input $60.00, Output $120.00
+- `gpt-4-turbo`: Input $10.00, Output $30.00, Cached Input $1.50
+- `gpt-4-turbo-preview`: Input $10.00, Output $30.00, Cached Input $1.50
+- `gpt-4-vision-preview`: Input $10.00, Output $30.00
+- `gpt-4-1106-preview`: Input $10.00, Output $30.00, Cached Input $1.50
+- `gpt-4-0125-preview`: Input $10.00, Output $30.00, Cached Input $1.50
+- `gpt-4o`: Input $5.00, Output $15.00, Cached Input $0.75
+- `gpt-4o-2024-05-13`: Input $5.00, Output $15.00, Cached Input $0.75
 
-4. Deploy the code:
-   - Zip the `lambda_function.py` file
-   - Upload to AWS Lambda
+##### GPT-3.5 Models
 
-### 3. Configure API Gateway
+- `gpt-3.5-turbo`: Input $1.50, Output $2.00, Cached Input $0.30
+- `gpt-3.5-turbo-16k`: Input $3.00, Output $4.00, Cached Input $0.60
+- `gpt-3.5-turbo-instruct`: Input $1.50, Output $2.00
+- `gpt-3.5-turbo-0125`: Input $0.50, Output $1.50, Cached Input $0.10
+- `gpt-3.5-turbo-0613`: Input $1.50, Output $2.00, Cached Input $0.30
+- `gpt-3.5-turbo-1106`: Input $1.00, Output $2.00, Cached Input $0.20
 
-1. Create a new REST API in API Gateway
-2. Create a resource and add a POST method
-3. Set the integration type to Lambda Function
-4. Configure CORS if needed
-5. Deploy the API
+##### Claude Models
 
-### 4. Simplified Deployment with AWS SAM
+- `claude-3-opus-20240229`: Input $15.00, Output $75.00
+- `claude-3-sonnet-20240229`: Input $3.00, Output $15.00
+- `claude-3-haiku-20240307`: Input $0.25, Output $1.25
+- `claude-2.1`: Input $8.00, Output $24.00
+- `claude-2.0`: Input $8.00, Output $24.00
+- `claude-instant-1.2`: Input $0.80, Output $2.40
 
-For easier deployment, use the provided template.yaml with AWS SAM:
+##### Mistral Models
+
+- `mistral-tiny`: Input $0.14, Output $0.42
+- `mistral-small`: Input $0.60, Output $1.80
+- `mistral-medium`: Input $2.70, Output $8.10, Reasoning $0.90
+- `mistral-large`: Input $8.00, Output $24.00, Reasoning $2.70
+
+##### Llama Models
+
+- `llama-2-7b`: Input $0.20, Output $0.20
+- `llama-2-13b`: Input $0.30, Output $0.40
+- `llama-2-70b`: Input $0.80, Output $0.90
+- `llama-3-8b`: Input $0.30, Output $0.30
+- `llama-3-70b`: Input $0.90, Output $0.90
+
+#### Success Response
+
+```json
+{
+  "message": "Usage data recorded successfully",
+  "organization_id": "org_456",
+  "user_id": "user_123",
+  "total_cost": 0.0045,
+  "timestamp": "2024-03-08T15:30:00Z"
+}
+```
+
+#### Error Responses
+
+```json
+// Invalid model
+{
+    "error": "Unsupported model: invalid-model. Supported models are: gpt-4, gpt-4-32k, ..."
+}
+
+// Missing field
+{
+    "error": "Missing required field: output_tokens"
+}
+```
+
+### 2. Get Costs (`GET /costs`)
+
+Retrieves usage costs for specified organizations, users, and date ranges.
+
+#### Request
+
+Query Parameters:
+
+- `organization_id` (optional): Filter by organization
+- `user_id` (optional): Filter by user
+- `start_date` (optional): Start date in YYYY-MM-DD format
+- `end_date` (optional): End date in YYYY-MM-DD format
+
+#### Example Queries
+
+1. Get costs for specific date range with all parameters:
+
+```http
+GET /costs?user_id=user_456&organization_id=org_123&start_date=2025-03-07&end_date=2025-03-09
+```
+
+2. Get all costs for an organization:
+
+```http
+GET /costs?organization_id=org_123
+```
+
+3. Get all costs for a user:
+
+```http
+GET /costs?user_id=user_456
+```
+
+#### Success Response
+
+```json
+{
+  "total_cost": 1.25,
+  "usage_data": [
+    {
+      "timestamp": "2024-03-08T15:30:00Z",
+      "model_name": "gpt-4",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "cost": 0.45
+    }
+  ],
+  "organization_id": "org_123",
+  "user_id": "user_456",
+  "start_date": "2025-03-07",
+  "end_date": "2025-03-09"
+}
+```
+
+#### Error Response
+
+```json
+{
+  "error": "Missing query parameters"
+}
+```
+
+## Testing
+
+You can test the API using the provided `test.py` script:
 
 ```bash
-# Install AWS SAM CLI if you haven't already
-# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html
+# Auto-discover endpoints from CloudFormation stack
+python test.py
 
-# Package and deploy
-sam build
-sam deploy --guided
+# Or specify endpoints manually
+python test.py --track-endpoint "https://api.example.com/track" --costs-endpoint "https://api.example.com/costs"
 ```
-
-## Integration Guide
-
-### When to Call This API
-
-Call this API immediately after each AI model request to track usage:
-
-1. Your application makes a request to an AI model API (OpenAI, Anthropic, etc.)
-2. You receive the response with token usage information
-3. Call this tracking API to log the usage for that customer
-
-### Example Workflow
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│                 │     │                 │     │                 │
-│  Your Customer  │────▶│  Your API/App   │────▶│   AI Model API  │
-│                 │     │                 │     │                 │
-└─────────────────┘     └────────┬────────┘     └────────┬────────┘
-                                 │                       │
-                                 │                       │
-                                 │                       ▼
-                                 │              ┌─────────────────┐
-                                 │              │                 │
-                                 │              │    Response     │
-                                 │              │  w/ token info  │
-                                 │              │                 │
-                                 │              └────────┬────────┘
-                                 │                       │
-                                 ▼                       │
-                        ┌─────────────────┐             │
-                        │                 │             │
-                        │  Usage Tracker  │◀────────────┘
-                        │      API        │
-                        │                 │
-                        └─────────────────┘
-```
-
-## Usage
-
-### 1. Track Usage (POST /track)
-
-Send a POST request to your API Gateway endpoint with the following JSON body:
-
-```json
-{
-  "organization_id": "org_12345",
-  "model_name": "gpt-4",
-  "input_tokens": 150,
-  "output_tokens": 50,
-  "user_id": "customer_6789"
-}
-```
-
-### 2. Get Usage Costs (GET /costs)
-
-Send a GET request to your API Gateway endpoint with the following query parameters:
-
-Required Parameters:
-- `organization_id`: Your organization's unique identifier
-- `user_id`: Unique identifier for your customer
-- `start_date`: Start date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
-- `end_date`: End date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
-
-Example Request:
-```
-GET /costs?organization_id=org_12345&user_id=customer_6789&start_date=2024-03-01&end_date=2024-03-31
-```
-
-Successful Response:
-```json
-{
-  "organization_id": "org_12345",
-  "user_id": "customer_6789",
-  "start_date": "2024-03-01T00:00:00",
-  "end_date": "2024-03-31T23:59:59",
-  "total_cost": 12.45,
-  "usage_count": 150,
-  "time_period_days": 31
-}
-```
-
-The response includes:
-- `total_cost`: Sum of all costs for the specified period
-- `usage_count`: Number of API calls made during the period
-- `time_period_days`: Number of days between start_date and end_date
-
-## Data Storage
-
-The service only stores the following information in DynamoDB:
-- `organization_id`: Your organization's identifier
-- `user_id`: Your customer's identifier
-- `timestamp`: When the request was made
-- `total_cost`: The calculated cost of the API usage
-
-All other fields (model_name, token counts, etc.) are used for cost calculation but not stored in the database.
 
 ## Error Handling
 
-The Lambda function handles various error cases:
-- Missing required fields (400 Bad Request)
-- Internal server errors (500 Internal Server Error)
+The API uses standard HTTP status codes:
+
+- 200: Success
+- 400: Bad Request (invalid input, missing fields)
+- 403: Unauthorized
+- 500: Internal Server Error
+
+## Notes
+
+1. All costs are calculated in USD
+2. Timestamps are in ISO 8601 format
+3. Token counts must be positive integers
+4. Date ranges are inclusive
+5. At least one of `organization_id` or `user_id` is required for cost queries

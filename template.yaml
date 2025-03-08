@@ -32,7 +32,7 @@ Resources:
       KeySchema:
         - AttributeName: organization_id
           KeyType: HASH
-        - AttributeName: user_id
+        - AttributeName: user_id#timestamp
           KeyType: RANGE
       GlobalSecondaryIndexes:
         - IndexName: OrgTimestampIndex

@@ -143,8 +143,9 @@ def lambda_handler(event, context):
         # Create item to store in DynamoDB with organization and user as composite key
         item = {
             'organization_id': organization_id,  # Partition key
-            'user_id': user_id,                  # Sort key
-            'timestamp': timestamp,              # For time-based queries
+            'user_id#timestamp': f"{user_id}#{timestamp}",  # Sort key
+            'user_id': user_id,  # Store user_id separately for GSI
+            'timestamp': timestamp,  # Store timestamp separately for GSI
             'total_cost': total_cost
         }
         

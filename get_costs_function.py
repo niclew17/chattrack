@@ -58,13 +58,14 @@ def lambda_handler(event, context):
                 })
             }
         
-        # Query DynamoDB
+        # Query DynamoDB using the GSI for better performance
         response = table.query(
+            IndexName='OrgTimestampIndex',
             KeyConditionExpression=
                 Key('organization_id').eq(organization_id) & 
-                Key('user_id').eq(user_id),
+                Key('timestamp').between(start_date, end_date),
             FilterExpression=
-                Attr('timestamp').between(start_date, end_date)
+                Attr('user_id').eq(user_id)
         )
         
         # Calculate total cost

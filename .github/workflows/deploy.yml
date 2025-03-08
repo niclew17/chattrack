@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - ci-cd-pipeline
+      - post_function
   workflow_dispatch:
 
 env:

@@ -4,6 +4,7 @@ import uuid
 import os
 from datetime import datetime, timezone
 import logging
+from decimal import Decimal
 
 # Initialize logging
 logger = logging.getLogger()
@@ -68,44 +69,44 @@ def lambda_handler(event, context):
         # Pricing rates per 1,000,000 tokens (in USD) - update these as needed
         model_pricing = {
             # GPT-4 models
-            'gpt-4': {'input': 30.0, 'output': 60.0},
-            'gpt-4-32k': {'input': 60.0, 'output': 120.0},
-            'gpt-4-turbo': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
-            'gpt-4-turbo-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
-            'gpt-4-vision-preview': {'input': 10.0, 'output': 30.0},
-            'gpt-4-1106-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
-            'gpt-4-0125-preview': {'input': 10.0, 'output': 30.0, 'cached_input': 1.5},
-            'gpt-4o': {'input': 5.0, 'output': 15.0, 'cached_input': 0.75},
-            'gpt-4o-2024-05-13': {'input': 5.0, 'output': 15.0, 'cached_input': 0.75},
+            'gpt-4': {'input': Decimal('30.0'), 'output': Decimal('60.0')},
+            'gpt-4-32k': {'input': Decimal('60.0'), 'output': Decimal('120.0')},
+            'gpt-4-turbo': {'input': Decimal('10.0'), 'output': Decimal('30.0'), 'cached_input': Decimal('1.5')},
+            'gpt-4-turbo-preview': {'input': Decimal('10.0'), 'output': Decimal('30.0'), 'cached_input': Decimal('1.5')},
+            'gpt-4-vision-preview': {'input': Decimal('10.0'), 'output': Decimal('30.0')},
+            'gpt-4-1106-preview': {'input': Decimal('10.0'), 'output': Decimal('30.0'), 'cached_input': Decimal('1.5')},
+            'gpt-4-0125-preview': {'input': Decimal('10.0'), 'output': Decimal('30.0'), 'cached_input': Decimal('1.5')},
+            'gpt-4o': {'input': Decimal('5.0'), 'output': Decimal('15.0'), 'cached_input': Decimal('0.75')},
+            'gpt-4o-2024-05-13': {'input': Decimal('5.0'), 'output': Decimal('15.0'), 'cached_input': Decimal('0.75')},
             
             # GPT-3.5 models
-            'gpt-3.5-turbo': {'input': 1.5, 'output': 2.0, 'cached_input': 0.3},
-            'gpt-3.5-turbo-16k': {'input': 3.0, 'output': 4.0, 'cached_input': 0.6},
-            'gpt-3.5-turbo-instruct': {'input': 1.5, 'output': 2.0},
-            'gpt-3.5-turbo-0125': {'input': 0.5, 'output': 1.5, 'cached_input': 0.1},
-            'gpt-3.5-turbo-0613': {'input': 1.5, 'output': 2.0, 'cached_input': 0.3},
-            'gpt-3.5-turbo-1106': {'input': 1.0, 'output': 2.0, 'cached_input': 0.2},
+            'gpt-3.5-turbo': {'input': Decimal('1.5'), 'output': Decimal('2.0'), 'cached_input': Decimal('0.3')},
+            'gpt-3.5-turbo-16k': {'input': Decimal('3.0'), 'output': Decimal('4.0'), 'cached_input': Decimal('0.6')},
+            'gpt-3.5-turbo-instruct': {'input': Decimal('1.5'), 'output': Decimal('2.0')},
+            'gpt-3.5-turbo-0125': {'input': Decimal('0.5'), 'output': Decimal('1.5'), 'cached_input': Decimal('0.1')},
+            'gpt-3.5-turbo-0613': {'input': Decimal('1.5'), 'output': Decimal('2.0'), 'cached_input': Decimal('0.3')},
+            'gpt-3.5-turbo-1106': {'input': Decimal('1.0'), 'output': Decimal('2.0'), 'cached_input': Decimal('0.2')},
             
             # Claude models
-            'claude-3-opus-20240229': {'input': 15.0, 'output': 75.0},
-            'claude-3-sonnet-20240229': {'input': 3.0, 'output': 15.0},
-            'claude-3-haiku-20240307': {'input': 0.25, 'output': 1.25},
-            'claude-2.1': {'input': 8.0, 'output': 24.0},
-            'claude-2.0': {'input': 8.0, 'output': 24.0},
-            'claude-instant-1.2': {'input': 0.8, 'output': 2.4},
+            'claude-3-opus-20240229': {'input': Decimal('15.0'), 'output': Decimal('75.0')},
+            'claude-3-sonnet-20240229': {'input': Decimal('3.0'), 'output': Decimal('15.0')},
+            'claude-3-haiku-20240307': {'input': Decimal('0.25'), 'output': Decimal('1.25')},
+            'claude-2.1': {'input': Decimal('8.0'), 'output': Decimal('24.0')},
+            'claude-2.0': {'input': Decimal('8.0'), 'output': Decimal('24.0')},
+            'claude-instant-1.2': {'input': Decimal('0.8'), 'output': Decimal('2.4')},
             
             # Mistral models
-            'mistral-tiny': {'input': 0.14, 'output': 0.42},
-            'mistral-small': {'input': 0.6, 'output': 1.8},
-            'mistral-medium': {'input': 2.7, 'output': 8.1, 'reasoning': 0.9},
-            'mistral-large': {'input': 8.0, 'output': 24.0, 'reasoning': 2.7},
+            'mistral-tiny': {'input': Decimal('0.14'), 'output': Decimal('0.42')},
+            'mistral-small': {'input': Decimal('0.6'), 'output': Decimal('1.8')},
+            'mistral-medium': {'input': Decimal('2.7'), 'output': Decimal('8.1'), 'reasoning': Decimal('0.9')},
+            'mistral-large': {'input': Decimal('8.0'), 'output': Decimal('24.0'), 'reasoning': Decimal('2.7')},
             
             # Llama models
-            'llama-2-7b': {'input': 0.2, 'output': 0.2},
-            'llama-2-13b': {'input': 0.3, 'output': 0.4},
-            'llama-2-70b': {'input': 0.8, 'output': 0.9},
-            'llama-3-8b': {'input': 0.3, 'output': 0.3},
-            'llama-3-70b': {'input': 0.9, 'output': 0.9}
+            'llama-2-7b': {'input': Decimal('0.2'), 'output': Decimal('0.2')},
+            'llama-2-13b': {'input': Decimal('0.3'), 'output': Decimal('0.4')},
+            'llama-2-70b': {'input': Decimal('0.8'), 'output': Decimal('0.9')},
+            'llama-3-8b': {'input': Decimal('0.3'), 'output': Decimal('0.3')},
+            'llama-3-70b': {'input': Decimal('0.9'), 'output': Decimal('0.9')}
         }
         
         # Check if the model is supported
@@ -121,18 +122,18 @@ def lambda_handler(event, context):
         model_rates = model_pricing[model_name]
         
         # Calculate costs
-        input_cost = (input_tokens / 1000000) * model_rates['input']
-        output_cost = (output_tokens / 1000000) * model_rates['output']
+        input_cost = (Decimal(str(input_tokens)) / Decimal('1000000')) * model_rates['input']
+        output_cost = (Decimal(str(output_tokens)) / Decimal('1000000')) * model_rates['output']
         
         # Calculate cached input cost if applicable
-        cached_input_cost = 0
+        cached_input_cost = Decimal('0')
         if cached_input_tokens > 0 and 'cached_input' in model_rates:
-            cached_input_cost = (cached_input_tokens / 1000000) * model_rates['cached_input']
+            cached_input_cost = (Decimal(str(cached_input_tokens)) / Decimal('1000000')) * model_rates['cached_input']
             
         # Calculate reasoning tokens cost if applicable
-        reasoning_cost = 0
+        reasoning_cost = Decimal('0')
         if reasoning_tokens > 0 and 'reasoning' in model_rates:
-            reasoning_cost = (reasoning_tokens / 1000000) * model_rates['reasoning']
+            reasoning_cost = (Decimal(str(reasoning_tokens)) / Decimal('1000000')) * model_rates['reasoning']
             
         total_cost = input_cost + output_cost + cached_input_cost + reasoning_cost
         
@@ -161,7 +162,7 @@ def lambda_handler(event, context):
             'action': 'usage_tracking',
             'organization_id': organization_id,
             'user_id': user_id,
-            'total_cost': total_cost,
+            'total_cost': str(total_cost),  # Convert to string for logging to preserve precision
             'timestamp': timestamp
         })
         
@@ -171,9 +172,8 @@ def lambda_handler(event, context):
                 'message': 'Usage data recorded successfully',
                 'organization_id': organization_id,
                 'user_id': user_id,
-                'total_cost': total_cost,
-                'timestamp': timestamp
-            })
+                'total_cost': float(total_cost)  # Convert to float for JSON serialization
+            }, default=str)  # Use default=str to handle Decimal serialization
         }
     
     except Exception as e:

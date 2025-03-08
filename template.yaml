@@ -25,6 +25,8 @@ Resources:
       AttributeDefinitions:
         - AttributeName: organization_id
           AttributeType: S
+        - AttributeName: record_id
+          AttributeType: S
         - AttributeName: user_id
           AttributeType: S
         - AttributeName: timestamp
@@ -32,7 +34,7 @@ Resources:
       KeySchema:
         - AttributeName: organization_id
           KeyType: HASH
-        - AttributeName: user_id#timestamp
+        - AttributeName: record_id
           KeyType: RANGE
       GlobalSecondaryIndexes:
         - IndexName: OrgTimestampIndex

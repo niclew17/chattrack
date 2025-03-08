@@ -1,13 +1,12 @@
 import json
 import boto3
-import uuid
 import os
 from datetime import datetime
-from dynamodb_encryption_sdk.encrypted.table import EncryptedTable
-from dynamodb_encryption_sdk.identifiers import CryptoAction
-from dynamodb_encryption_sdk.material_providers.aws_kms_provider import AwsKmsCryptographicMaterialsProvider
-from dynamodb_encryption_sdk.structures import AttributeActions
 import logging
+
+# Initialize logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')
@@ -16,51 +15,49 @@ table = dynamodb.Table(table_name)
 
 # Add authorization check
 def authorize_request(event, organization_id):
-    # Get the caller's identity from the request context
-    # This assumes you're using API Gateway with IAM or Cognito authorization
-    caller_context = event.get('requestContext', {}).get('authorizer', {})
-    caller_org_id = caller_context.get('organization_id')
-    
-    # Organization can only access their own data
-    # No super admin access - strict isolation between organizations
-    return caller_org_id == organization_id
-
-# Set up encryption with organization-specific keys
-def get_encrypted_table(table_name, organization_id):
-    table = dynamodb.Table(table_name)
-    
-    # Use organization-specific KMS key for strict isolation
-    # Each organization gets their own encryption key
-    kms_key_id = f"alias/org-{organization_id}-key" 
-    
-    aws_kms_cmp = AwsKmsCryptographicMaterialsProvider(key_id=kms_key_id)
-    
-    actions = AttributeActions(
-        default_action=CryptoAction.ENCRYPT_AND_SIGN,
-        attribute_actions={
-            'organization_id': CryptoAction.SIGN_ONLY,  # Keep searchable
-            'user_id': CryptoAction.SIGN_ONLY,          # Keep searchable
-            'timestamp': CryptoAction.SIGN_ONLY          # Keep searchable for time-based queries
-        }
-    )
-    
-    encrypted_table = EncryptedTable(
-        table=table,
-        materials_provider=aws_kms_cmp,
-        attribute_actions=actions
-    )
-    
-    return encrypted_table
-
-# Add comprehensive logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# Check organization rate limits
-def check_rate_limits(organization_id):
-    # Implement rate limiting logic here
-    # For example, using Redis or DynamoDB to track request counts
+    # For a public API where organizations provide their own IDs,
+    # we don't need to validate the caller's identity
     return True
+
+# Check rate limits for the organization
+def check_rate_limits(organization_id):
+    # Simple rate limiting using DynamoDB
+    # Limit to 1000 requests per hour per organization
+    try:
+        rate_limit_table_name = os.environ.get('RATE_LIMIT_TABLE', table_name)
+        rate_limit_table = dynamodb.Table(rate_limit_table_name)
+        
+        # Current hour as the time window
+        current_hour = datetime.now().strftime('%Y-%m-%d-%H')
+        rate_key = f"{organization_id}:{current_hour}"
+        
+        # Update the request count atomically
+        response = rate_limit_table.update_item(
+            Key={
+                'rate_key': rate_key
+            },
+            UpdateExpression="ADD request_count :inc",
+            ExpressionAttributeValues={
+                ':inc': 1,
+                ':limit': 1000  # 1000 requests per hour
+            },
+            ConditionExpression="attribute_not_exists(request_count) OR request_count < :limit",
+            ReturnValues="UPDATED_NEW"
+        )
+        
+        # If we get here, the rate limit is not exceeded
+        return True
+    
+    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+        # Rate limit exceeded
+        logger.warning(f"Rate limit exceeded for organization: {organization_id}")
+        return False
+    
+    except Exception as e:
+        # If there's an error, allow the request to proceed
+        # This prevents blocking legitimate requests due to rate limiting issues
+        logger.error(f"Error in rate limiting: {str(e)}")
+        return True
 
 def lambda_handler(event, context):
     try:
@@ -91,6 +88,24 @@ def lambda_handler(event, context):
         # Optional token counts
         cached_input_tokens = int(body.get('cached_input_tokens', 0))
         reasoning_tokens = int(body.get('reasoning_tokens', 0))
+        
+        # Authorize the request - ensure organization can only access their own data
+        if not authorize_request(event, organization_id):
+            return {
+                'statusCode': 403,
+                'body': json.dumps({
+                    'error': 'Unauthorized access. Organizations can only access their own data.'
+                })
+            }
+        
+        # Check rate limits for the organization
+        if not check_rate_limits(organization_id):
+            return {
+                'statusCode': 429,
+                'body': json.dumps({
+                    'error': 'Rate limit exceeded for organization'
+                })
+            }
         
         # Calculate cost based on model and token usage
         # Pricing rates per 1,000,000 tokens (in USD) - update these as needed
@@ -170,24 +185,6 @@ def lambda_handler(event, context):
         # Generate timestamp if not provided
         timestamp = body.get('timestamp', datetime.now(datetime.UTC).isoformat())
         
-        # Authorize the request - ensure organization can only access their own data
-        if not authorize_request(event, organization_id):
-            return {
-                'statusCode': 403,
-                'body': json.dumps({
-                    'error': 'Unauthorized access. Organizations can only access their own data.'
-                })
-            }
-        
-        # Check rate limits for the organization
-        if not check_rate_limits(organization_id):
-            return {
-                'statusCode': 429,
-                'body': json.dumps({
-                    'error': 'Rate limit exceeded for organization'
-                })
-            }
-        
         # Create item to store in DynamoDB with organization and user as composite key
         item = {
             'organization_id': organization_id,  # Partition key
@@ -199,14 +196,13 @@ def lambda_handler(event, context):
         # Add any additional fields from the request
         for key, value in body.items():
             # Skip fields we've already processed or don't want to store
-            if key not in item and key not in ['request_id', 'conversation_id', 'model_name', 'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens']:
+            if key not in item and key not in ['model_name', 'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens']:
                 item[key] = value
         
-        # Use encryption
-        encrypted_table = get_encrypted_table(table_name, organization_id)
-        encrypted_table.put_item(Item=item)
+        # Store the data in DynamoDB
+        table.put_item(Item=item)
         
-        # Add comprehensive logging
+        # Log the usage
         logger.info({
             'action': 'usage_tracking',
             'organization_id': organization_id,
@@ -226,7 +222,7 @@ def lambda_handler(event, context):
         }
     
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({

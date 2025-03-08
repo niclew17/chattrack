@@ -9,7 +9,7 @@ Parameters:
     Description: Name of the DynamoDB table for storing usage data
 
 Resources:
-  # DynamoDB Table
+  # DynamoDB Table for Usage Tracking
   ChatGPTUsageTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -45,6 +45,22 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  # DynamoDB Table for Rate Limiting
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${TableName}-rate-limits"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: rate_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: rate_key
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
   # Lambda Function
   ChatGPTUsageFunction:
     Type: AWS::Serverless::Function
@@ -59,28 +75,18 @@ Resources:
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref TableName
+          RATE_LIMIT_TABLE: !Ref RateLimitTable
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
       Events:
         ApiEvent:
           Type: Api
           Properties:
             Path: /track
             Method: post
-
-  # API Gateway
-  ChatGPTUsageApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName: Prod
-      Auth:
-        DefaultAuthorizer: CognitoAuthorizer
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: !GetAtt UserPool.Arn
-            Identity:
-              Header: Authorization
 
 Outputs:
   ApiEndpoint:

@@ -3,7 +3,6 @@ set -e
 
 # Configuration
 STACK_NAME="chatgpt-usage-tracker"
-S3_BUCKET="your-deployment-bucket"  # Replace with your S3 bucket name
 REGION="us-east-1"  # Replace with your AWS region
 
 # Check if AWS SAM CLI is installed
@@ -25,10 +24,9 @@ sam build
 echo "Deploying the application..."
 sam deploy \
     --stack-name $STACK_NAME \
-    --s3-bucket $S3_BUCKET \
     --capabilities CAPABILITY_IAM \
     --region $REGION \
-    --no-fail-on-empty-changeset
+    --guided
 
 echo "Deployment completed!"
 

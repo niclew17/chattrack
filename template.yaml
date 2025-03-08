@@ -1,5 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
+AWSTemplateFormatVersion: "2010-09-09"
 Description: ChatGPT API Usage Tracking System
 
 Parameters:
@@ -45,39 +44,116 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  # Lambda Function Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt ChatGPTUsageTable.Arn
+
   # Lambda Function
   ChatGPTUsageFunction:
-    Type: AWS::Serverless::Function
+    Type: AWS::Lambda::Function
     Properties:
-      CodeUri: ./
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentPackageKey
       Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.9
-      Architectures:
-        - x86_64
-      MemorySize: 128
       Timeout: 10
+      MemorySize: 128
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref TableName
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TableName
-      Events:
-        ApiEvent:
-          Type: Api
-          Properties:
-            Path: /track
-            Method: post
+          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
+          LOG_LEVEL: INFO
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ChatGPT Usage Tracking API
+      Description: API for tracking ChatGPT usage
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: track
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatGPTUsageFunction.Arn}/invocations
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: Prod
+
+  # Lambda Permission for API Gateway
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatGPTUsageFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/track
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  DeploymentPackageKey:
+    Type: String
+    Description: S3 key for Lambda deployment package
 
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL for the ChatGPT usage tracking function
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/track"
-  
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/track"
+
   DynamoDBTableName:
     Description: Name of the DynamoDB table
     Value: !Ref TableName
-  
+
   LambdaFunction:
     Description: Lambda function name
-    Value: !Ref ChatGPTUsageFunction 
+    Value: !Ref ChatGPTUsageFunction

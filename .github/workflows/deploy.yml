@@ -1,15 +1,15 @@
-name: Deploy SAM Application
+name: Deploy CloudFormation Stack
 
 on:
   push:
     branches:
       - main
-      - ci-cd-pipeline
   workflow_dispatch:
 
 env:
-  STACK_NAME: chatgpt-usage-tracker
   AWS_REGION: us-east-1
+  STACK_NAME: chatgpt-usage-tracker
+  LAMBDA_ZIP: lambda-package.zip
 
 jobs:
   deploy:
@@ -30,19 +30,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install awscli
-          # Install AWS SAM CLI
-          wget https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-x86_64.zip
-          unzip aws-sam-cli-linux-x86_64.zip -d sam-installation
-          sudo ./sam-installation/install
-          # Verify installations
-          echo "AWS CLI Version:"
-          aws --version
-          echo "SAM CLI Version:"
-          sam --version
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -51,56 +43,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Verify AWS Configuration
+      - name: Package Lambda Function
         run: |
-          # Check AWS credentials
-          aws sts get-caller-identity
-          # Check S3 bucket exists
-          aws s3api head-bucket --bucket ${{ secrets.AWS_S3_BUCKET }} || {
-            echo "Error: S3 bucket ${{ secrets.AWS_S3_BUCKET }} not found or not accessible"
-            exit 1
-          }
+          # Create a temporary directory for packaging
+          mkdir -p package
 
-      - name: SAM Build
-        run: |
-          echo "Building the application..."
-          sam build
+          # Copy Lambda function and dependencies
+          cp lambda_function.py package/
+          cp -r $(python -c "import site; print(site.getsitepackages()[0])")/* package/
 
-      - name: SAM Deploy
+          # Create deployment package
+          cd package
+          zip -r ../${{ env.LAMBDA_ZIP }} .
+          cd ..
+
+          # Get timestamp for unique S3 key
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          echo "LAMBDA_S3_KEY=deployments/$TIMESTAMP/${{ env.LAMBDA_ZIP }}" >> $GITHUB_ENV
+
+          # Upload to S3
+          aws s3 cp ${{ env.LAMBDA_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/${{ env.LAMBDA_S3_KEY }}
+
+      - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying the application..."
-          sam deploy \
+          aws cloudformation deploy \
+            --template-file template.yaml \
             --stack-name ${{ env.STACK_NAME }} \
-            --s3-bucket ${{ secrets.AWS_S3_BUCKET }} \
             --capabilities CAPABILITY_IAM \
-            --region ${{ env.AWS_REGION }} \
-            --no-fail-on-empty-changeset
-
-      - name: Get and Display API Endpoint
-        run: |
-          echo "Fetching API Endpoint..."
-          API_ENDPOINT=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "API Endpoint: $API_ENDPOINT"
-          # Save the endpoint to GitHub output
-          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
-
-      - name: Check Deployment Status
-        run: |
-          # Verify stack exists and is in good state
-          STACK_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query 'Stacks[0].StackStatus' \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          if [[ $STACK_STATUS != *"COMPLETE"* ]]; then
-            echo "Warning: Stack status is $STACK_STATUS"
-            if [[ $STACK_STATUS == *"FAILED"* || $STACK_STATUS == *"ROLLBACK"* ]]; then
-              echo "Deployment failed with status: $STACK_STATUS"
-              exit 1
-            fi
-          fi
-          echo "Deployment completed successfully with status: $STACK_STATUS"
+            --parameter-overrides \
+              DeploymentBucket=${{ secrets.AWS_S3_BUCKET }} \
+              DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }}

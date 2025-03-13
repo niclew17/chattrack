@@ -6,6 +6,10 @@ Parameters:
     Type: String
     Default: chatgpt_usage_tracking
     Description: Name of the DynamoDB table for storing usage data
+  OrgTableName:
+    Type: String
+    Default: chatgpt_organizations
+    Description: Name of the DynamoDB table for storing organization data
   DeploymentBucket:
     Type: String
     Description: S3 bucket containing Lambda deployment package
@@ -18,6 +22,9 @@ Parameters:
   GetOrgCostsPackageKey:
     Type: String
     Description: S3 key for Get Organization Costs Lambda deployment package
+  RegisterOrgPackageKey:
+    Type: String
+    Description: S3 key for Organization Registration Lambda deployment package
 
 Resources:
   # DynamoDB Table for Usage Tracking
@@ -60,6 +67,30 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  # Organization Table for Auth
+  OrganizationTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Ref OrgTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: organization_id
+          AttributeType: S
+        - AttributeName: auth_token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: organization_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AuthTokenIndex
+          KeySchema:
+            - AttributeName: auth_token
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
   # Lambda Function Role
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -86,14 +117,18 @@ Resources:
                   - dynamodb:GetItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt ChatGPTUsageTable.Arn
+                Resource: 
+                  - !GetAtt ChatGPTUsageTable.Arn
+                  - !GetAtt OrganizationTable.Arn
         - PolicyName: DynamoDBGSIAccess
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: dynamodb:Query
-                Resource: !Sub "${ChatGPTUsageTable.Arn}/index/*"
+                Resource: 
+                  - !Sub "${ChatGPTUsageTable.Arn}/index/*"
+                  - !Sub "${OrganizationTable.Arn}/index/*"
 
   # Lambda Function for POST
   ChatGPTUsageFunction:
@@ -152,6 +187,26 @@ Resources:
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref TableName
+          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
+          LOG_LEVEL: INFO
+
+  # Lambda Function for Organization Registration
+  RegisterOrgFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref RegisterOrgPackageKey
+      Handler: register_org_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref OrgTableName
           POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
           LOG_LEVEL: INFO
 
@@ -296,6 +351,40 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/GET/organization-costs
 
+  # API Gateway Resource and Method for Organization Registration
+  RegisterOrgResource:
+    Type: AWS::ApiGateway::Resource
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: register-organization
+
+  RegisterOrgMethod:
+    Type: AWS::ApiGateway::Method
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref RegisterOrgResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterOrgFunction.Arn}/invocations
+
+  RegisterOrgLambdaPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RegisterOrgFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/register-organization
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL for the ChatGPT usage tracking function
@@ -308,6 +397,10 @@ Outputs:
   GetOrgCostsApiEndpoint:
     Description: API Gateway endpoint URL for getting organization costs
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/organization-costs"
+
+  RegisterOrgApiEndpoint:
+    Description: API Gateway endpoint URL for registering organizations
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/register-organization"
 
   DynamoDBTableName:
     Description: Name of the DynamoDB table

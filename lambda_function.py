@@ -14,13 +14,52 @@ logger.setLevel(logging.INFO)
 region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
 dynamodb = boto3.resource('dynamodb', region_name=region)
 table_name = os.environ.get('DYNAMODB_TABLE', 'chatgpt_usage_tracking')
+org_table_name = os.environ.get('ORG_TABLE_NAME', 'chatgpt_organizations')
 table = dynamodb.Table(table_name)
+org_table = dynamodb.Table(org_table_name)
 
-# Add authorization check
 def authorize_request(event, organization_id):
-    # For a public API where organizations provide their own IDs,
-    # we don't need to validate the caller's identity
-    return True
+    """
+    Validate the auth token against the organization ID.
+    Returns True if authorized, False otherwise.
+    """
+    try:
+        # Get the Authorization header
+        headers = event.get('headers', {})
+        if not headers or 'Authorization' not in headers:
+            logger.error("No Authorization header present")
+            return False
+
+        auth_token = headers['Authorization'].replace('Bearer ', '')
+
+        # Query the organization table using the auth token index
+        response = org_table.query(
+            IndexName='AuthTokenIndex',
+            KeyConditionExpression='auth_token = :token',
+            ExpressionAttributeValues={':token': auth_token}
+        )
+
+        # Check if we found a matching organization
+        if not response['Items']:
+            logger.error("No organization found for the provided auth token")
+            return False
+
+        # Verify the organization ID matches
+        org = response['Items'][0]
+        if org['organization_id'] != organization_id:
+            logger.error("Organization ID mismatch")
+            return False
+
+        # Verify the organization is active
+        if org.get('status') != 'active':
+            logger.error("Organization is not active")
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during authorization: {str(e)}")
+        return False
 
 # Simplified function that always returns True (no rate limiting)
 def check_rate_limits(organization_id):

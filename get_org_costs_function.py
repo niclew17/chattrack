@@ -1,117 +1,158 @@
 import json
 import boto3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key, Attr
 
 # Initialize logging
-import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize DynamoDB client
-dynamodb = boto3.resource('dynamodb')
+region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+dynamodb = boto3.resource('dynamodb', region_name=region)
 table_name = os.environ.get('DYNAMODB_TABLE', 'chatgpt_usage_tracking')
+org_table_name = os.environ.get('ORG_TABLE_NAME', 'chatgpt_organizations')
 table = dynamodb.Table(table_name)
+org_table = dynamodb.Table(org_table_name)
+
+def authorize_request(event, organization_id):
+    """
+    Validate the auth token against the organization ID.
+    Returns True if authorized, False otherwise.
+    """
+    try:
+        # Get the Authorization header
+        headers = event.get('headers', {})
+        if not headers or 'Authorization' not in headers:
+            logger.error("No Authorization header present")
+            return False
+
+        auth_token = headers['Authorization'].replace('Bearer ', '')
+
+        # Query the organization table using the auth token index
+        response = org_table.query(
+            IndexName='AuthTokenIndex',
+            KeyConditionExpression='auth_token = :token',
+            ExpressionAttributeValues={':token': auth_token}
+        )
+
+        # Check if we found a matching organization
+        if not response['Items']:
+            logger.error("No organization found for the provided auth token")
+            return False
+
+        # Verify the organization ID matches
+        org = response['Items'][0]
+        if org['organization_id'] != organization_id:
+            logger.error("Organization ID mismatch")
+            return False
+
+        # Verify the organization is active
+        if org.get('status') != 'active':
+            logger.error("Organization is not active")
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during authorization: {str(e)}")
+        return False
 
 def lambda_handler(event, context):
     try:
-        # Parse the incoming query parameters
-        if 'queryStringParameters' not in event or not event['queryStringParameters']:
+        # Get query parameters
+        query_params = event.get('queryStringParameters', {})
+        if not query_params:
             return {
                 'statusCode': 400,
                 'body': json.dumps({
                     'error': 'Missing query parameters'
                 })
             }
-        
-        params = event['queryStringParameters']
-        
-        # Validate required parameters
+
+        # Extract and validate required parameters
         required_params = ['organization_id', 'start_date', 'end_date']
         for param in required_params:
-            if param not in params:
+            if param not in query_params:
                 return {
                     'statusCode': 400,
                     'body': json.dumps({
                         'error': f'Missing required parameter: {param}'
                     })
                 }
-        
-        # Extract parameters
-        organization_id = params['organization_id']
-        start_date = params['start_date']
-        end_date = params['end_date']
-        
-        # Validate date formats
-        try:
-            # Convert to ISO format if not already
-            start_date = datetime.fromisoformat(start_date).isoformat()
-            end_date = datetime.fromisoformat(end_date).isoformat()
-        except ValueError:
+
+        organization_id = query_params['organization_id']
+        start_date = query_params['start_date']
+        end_date = query_params['end_date']
+
+        # Authorize the request
+        if not authorize_request(event, organization_id):
             return {
-                'statusCode': 400,
+                'statusCode': 403,
                 'body': json.dumps({
-                    'error': 'Invalid date format. Please use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'
+                    'error': 'Unauthorized access'
                 })
             }
-        
-        # Query DynamoDB using the OrgTimestampIndex
+
+        # Query DynamoDB for usage data
         response = table.query(
             IndexName='OrgTimestampIndex',
-            KeyConditionExpression=
-                Key('organization_id').eq(organization_id) & 
-                Key('timestamp').between(start_date, end_date)
+            KeyConditionExpression='organization_id = :oid AND #ts BETWEEN :start AND :end',
+            ExpressionAttributeNames={'#ts': 'timestamp'},
+            ExpressionAttributeValues={
+                ':oid': organization_id,
+                ':start': start_date,
+                ':end': end_date
+            }
         )
-        
+
         # Process results by user
         user_costs = {}
-        total_org_cost = Decimal('0')
-        
         for item in response['Items']:
             user_id = item['user_id']
             cost = Decimal(str(item['total_cost']))
             
-            # Initialize user data if not exists
             if user_id not in user_costs:
                 user_costs[user_id] = {
-                    'total_cost': Decimal('0'),
-                    'usage_count': 0
+                    'total_cost': cost,
+                    'usage_count': 1
                 }
-            
-            # Update user statistics
-            user_costs[user_id]['total_cost'] += cost
-            user_costs[user_id]['usage_count'] += 1
-            total_org_cost += cost
-        
-        # Convert user costs to list and sort by total cost (highest first)
+            else:
+                user_costs[user_id]['total_cost'] += cost
+                user_costs[user_id]['usage_count'] += 1
+
+        # Convert to sorted list
         user_costs_list = [
             {
                 'user_id': user_id,
-                'total_cost': float(data['total_cost']),  # Convert Decimal to float for JSON
+                'total_cost': float(data['total_cost']),
                 'usage_count': data['usage_count']
             }
             for user_id, data in user_costs.items()
         ]
+
+        # Sort by total cost (highest first)
         user_costs_list.sort(key=lambda x: x['total_cost'], reverse=True)
-        
-        # Prepare the response
-        result = {
-            'organization_id': organization_id,
-            'start_date': start_date,
-            'end_date': end_date,
-            'total_organization_cost': float(total_org_cost),  # Convert Decimal to float for JSON
-            'total_users': len(user_costs),
-            'time_period_days': (datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days,
-            'user_costs': user_costs_list
-        }
-        
+
+        # Calculate organization totals
+        total_org_cost = sum(float(data['total_cost']) for data in user_costs.values())
+        total_users = len(user_costs)
+
         return {
             'statusCode': 200,
-            'body': json.dumps(result, default=str)
+            'body': json.dumps({
+                'organization_id': organization_id,
+                'start_date': start_date,
+                'end_date': end_date,
+                'total_organization_cost': total_org_cost,
+                'total_users': total_users,
+                'user_costs': user_costs_list
+            })
         }
-        
+
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         return {

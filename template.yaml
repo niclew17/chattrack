@@ -11,10 +11,13 @@ Parameters:
     Description: S3 bucket containing Lambda deployment package
   DeploymentPackageKey:
     Type: String
-    Description: S3 key for Lambda deployment package
+    Description: S3 key for POST Lambda deployment package
   GetCostsPackageKey:
     Type: String
     Description: S3 key for Get Costs Lambda deployment package
+  GetOrgCostsPackageKey:
+    Type: String
+    Description: S3 key for Get Organization Costs Lambda deployment package
 
 Resources:
   # DynamoDB Table for Usage Tracking
@@ -90,9 +93,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: dynamodb:Query
-                Resource: !Sub "${ChatGPTUsageTable.Arn}/index/OrgTimestampIndex"
+                Resource: !Sub "${ChatGPTUsageTable.Arn}/index/*"
 
-  # Lambda Function
+  # Lambda Function for POST
   ChatGPTUsageFunction:
     Type: AWS::Lambda::Function
     DeletionPolicy: Delete
@@ -112,6 +115,46 @@ Resources:
           POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
           LOG_LEVEL: INFO
 
+  # Lambda Function for Getting Costs
+  GetCostsFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref GetCostsPackageKey
+      Handler: get_costs_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref TableName
+          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
+          LOG_LEVEL: INFO
+
+  # Lambda Function for Getting Organization Costs
+  GetOrgCostsFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref GetOrgCostsPackageKey
+      Handler: get_org_costs_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref TableName
+          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
+          LOG_LEVEL: INFO
+
   # API Gateway
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
@@ -121,6 +164,7 @@ Resources:
       Name: ChatGPT Usage Tracking API
       Description: API for tracking ChatGPT usage
 
+  # Track Usage Resource and Method
   ApiResource:
     Type: AWS::ApiGateway::Resource
     DeletionPolicy: Delete
@@ -144,55 +188,7 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatGPTUsageFunction.Arn}/invocations
 
-  ApiDeployment:
-    Type: AWS::ApiGateway::Deployment
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    DependsOn: ApiMethod
-    Properties:
-      RestApiId: !Ref ApiGateway
-
-  ApiStage:
-    Type: AWS::ApiGateway::Stage
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      RestApiId: !Ref ApiGateway
-      DeploymentId: !Ref ApiDeployment
-      StageName: Prod
-
-  # Lambda Permission for API Gateway
-  LambdaPermission:
-    Type: AWS::Lambda::Permission
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref ChatGPTUsageFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/track
-
-  # Lambda Function for Getting Costs
-  GetCostsFunction:
-    Type: AWS::Lambda::Function
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      Code:
-        S3Bucket: !Ref DeploymentBucket
-        S3Key: !Ref GetCostsPackageKey
-      Handler: get_costs_function.lambda_handler
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.9
-      Timeout: 10
-      MemorySize: 128
-      Environment:
-        Variables:
-          DYNAMODB_TABLE: !Ref TableName
-          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
-          LOG_LEVEL: INFO
-
-  # API Gateway Resource for Get Costs
+  # Get Costs Resource and Method
   GetCostsResource:
     Type: AWS::ApiGateway::Resource
     DeletionPolicy: Delete
@@ -221,7 +217,65 @@ Resources:
         method.request.querystring.start_date: false
         method.request.querystring.end_date: false
 
-  # Lambda Permission for Get Costs API Gateway
+  # Get Organization Costs Resource and Method
+  GetOrgCostsResource:
+    Type: AWS::ApiGateway::Resource
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: organization-costs
+
+  GetOrgCostsMethod:
+    Type: AWS::ApiGateway::Method
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref GetOrgCostsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetOrgCostsFunction.Arn}/invocations
+      RequestParameters:
+        method.request.querystring.organization_id: false
+        method.request.querystring.start_date: false
+        method.request.querystring.end_date: false
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    DependsOn: 
+      - ApiMethod
+      - GetCostsMethod
+      - GetOrgCostsMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: Prod
+
+  # Lambda Permissions
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatGPTUsageFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/track
+
   GetCostsLambdaPermission:
     Type: AWS::Lambda::Permission
     DeletionPolicy: Delete
@@ -232,19 +286,29 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/GET/costs
 
+  GetOrgCostsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetOrgCostsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/GET/organization-costs
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL for the ChatGPT usage tracking function
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/track"
 
+  GetCostsApiEndpoint:
+    Description: API Gateway endpoint URL for getting user costs
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/costs"
+
+  GetOrgCostsApiEndpoint:
+    Description: API Gateway endpoint URL for getting organization costs
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/organization-costs"
+
   DynamoDBTableName:
     Description: Name of the DynamoDB table
     Value: !Ref TableName
-
-  LambdaFunction:
-    Description: Lambda function name
-    Value: !Ref ChatGPTUsageFunction
-
-  GetCostsApiEndpoint:
-    Description: API Gateway endpoint URL for getting costs
-    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/costs"

@@ -11,7 +11,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Initialize DynamoDB client
-dynamodb = boto3.resource('dynamodb')
+region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+dynamodb = boto3.resource('dynamodb', region_name=region)
 table_name = os.environ.get('DYNAMODB_TABLE', 'chatgpt_usage_tracking')
 table = dynamodb.Table(table_name)
 
@@ -140,11 +141,15 @@ def lambda_handler(event, context):
         # Generate timestamp if not provided
         timestamp = body.get('timestamp', datetime.now(timezone.utc).isoformat())
         
-        # Create item to store in DynamoDB with organization and user as composite key
+        # Generate a unique record ID
+        record_id = str(uuid.uuid4())
+        
+        # Create item to store in DynamoDB with organization and record_id as keys
         item = {
             'organization_id': organization_id,  # Partition key
-            'user_id': user_id,                  # Sort key
-            'timestamp': timestamp,              # For time-based queries
+            'record_id': record_id,             # Sort key
+            'user_id': user_id,                 # For GSI
+            'timestamp': timestamp,             # For GSI and time-based queries
             'total_cost': total_cost
         }
         

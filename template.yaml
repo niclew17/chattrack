@@ -15,16 +15,7 @@ Parameters:
     Description: S3 bucket containing Lambda deployment package
   DeploymentPackageKey:
     Type: String
-    Description: S3 key for POST Lambda deployment package
-  GetCostsPackageKey:
-    Type: String
-    Description: S3 key for Get Costs Lambda deployment package
-  GetOrgCostsPackageKey:
-    Type: String
-    Description: S3 key for Get Organization Costs Lambda deployment package
-  RegisterOrgPackageKey:
-    Type: String
-    Description: S3 key for Organization Registration Lambda deployment package
+    Description: S3 key for Lambda deployment package
 
 Resources:
   # DynamoDB Table for Usage Tracking
@@ -117,7 +108,7 @@ Resources:
                   - dynamodb:GetItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: 
+                Resource:
                   - !GetAtt ChatGPTUsageTable.Arn
                   - !GetAtt OrganizationTable.Arn
         - PolicyName: DynamoDBGSIAccess
@@ -126,7 +117,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: dynamodb:Query
-                Resource: 
+                Resource:
                   - !Sub "${ChatGPTUsageTable.Arn}/index/*"
                   - !Sub "${OrganizationTable.Arn}/index/*"
 
@@ -158,7 +149,7 @@ Resources:
     Properties:
       Code:
         S3Bucket: !Ref DeploymentBucket
-        S3Key: !Ref GetCostsPackageKey
+        S3Key: !Ref DeploymentPackageKey
       Handler: get_costs_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.9
@@ -178,7 +169,7 @@ Resources:
     Properties:
       Code:
         S3Bucket: !Ref DeploymentBucket
-        S3Key: !Ref GetOrgCostsPackageKey
+        S3Key: !Ref DeploymentPackageKey
       Handler: get_org_costs_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.9
@@ -198,7 +189,7 @@ Resources:
     Properties:
       Code:
         S3Bucket: !Ref DeploymentBucket
-        S3Key: !Ref RegisterOrgPackageKey
+        S3Key: !Ref DeploymentPackageKey
       Handler: register_org_function.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.9
@@ -304,7 +295,7 @@ Resources:
     Type: AWS::ApiGateway::Deployment
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
-    DependsOn: 
+    DependsOn:
       - ApiMethod
       - GetCostsMethod
       - GetOrgCostsMethod

@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - get_all_costomers
+      - delete-organization
   workflow_dispatch:
 
 env:

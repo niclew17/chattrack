@@ -1,6 +1,35 @@
 # ChatGPT Usage Tracking API
 
-This API allows you to track and retrieve ChatGPT usage costs across different models, organizations, and users.
+API for tracking and retrieving ChatGPT usage costs.
+
+## Endpoints
+
+### Track Usage (POST /track)
+
+Records ChatGPT API usage data.
+
+```http
+POST /track
+Content-Type: application/json
+
+{
+    "model_name": "gpt-4",
+    "input_tokens": 100,
+    "output_tokens": 50,
+    "user_id": "user_123",
+    "organization_id": "org_456"
+}
+```
+
+### Get Costs (GET /costs)
+
+Retrieves usage costs with optional filters.
+
+```http
+GET /costs?user_id=user_456&organization_id=org_123&start_date=2025-03-07&end_date=2025-03-09
+```
+
+For full documentation, see the [API Documentation](docs/API.md).
 
 ## API Endpoints
 

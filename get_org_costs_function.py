@@ -2,9 +2,9 @@ import json
 import boto3
 import os
 from datetime import datetime, timezone
+import logging
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key, Attr
-import logging
 
 # Initialize logging
 logger = logging.getLogger()
@@ -105,7 +105,7 @@ def lambda_handler(event, context):
             }
 
         # Extract and validate required parameters
-        required_params = ['user_id', 'organization_id', 'start_date', 'end_date']
+        required_params = ['organization_id', 'start_date', 'end_date']
         for param in required_params:
             if param not in query_params:
                 return {
@@ -116,7 +116,6 @@ def lambda_handler(event, context):
                 }
 
         organization_id = query_params['organization_id']
-        user_id = query_params['user_id']
         start_date = query_params['start_date']
         end_date = query_params['end_date']
 
@@ -131,29 +130,57 @@ def lambda_handler(event, context):
 
         # Query DynamoDB for usage data
         response = table.query(
-            IndexName='UserTimestampIndex',
-            KeyConditionExpression='user_id = :uid AND #ts BETWEEN :start AND :end',
+            IndexName='OrgTimestampIndex',
+            KeyConditionExpression='organization_id = :oid AND #ts BETWEEN :start AND :end',
             ExpressionAttributeNames={'#ts': 'timestamp'},
             ExpressionAttributeValues={
-                ':uid': user_id,
+                ':oid': organization_id,
                 ':start': start_date,
                 ':end': end_date
             }
         )
 
-        # Calculate total cost
-        total_cost = sum(float(item['total_cost']) for item in response['Items'])
-        usage_count = len(response['Items'])
+        # Process results by user
+        user_costs = {}
+        for item in response['Items']:
+            user_id = item['user_id']
+            cost = Decimal(str(item['total_cost']))
+            
+            if user_id not in user_costs:
+                user_costs[user_id] = {
+                    'total_cost': cost,
+                    'usage_count': 1
+                }
+            else:
+                user_costs[user_id]['total_cost'] += cost
+                user_costs[user_id]['usage_count'] += 1
+
+        # Convert to sorted list
+        user_costs_list = [
+            {
+                'user_id': user_id,
+                'total_cost': float(data['total_cost']),
+                'usage_count': data['usage_count']
+            }
+            for user_id, data in user_costs.items()
+        ]
+
+        # Sort by total cost (highest first)
+        user_costs_list.sort(key=lambda x: x['total_cost'], reverse=True)
+
+        # Calculate organization totals
+        total_org_cost = sum(float(data['total_cost']) for data in user_costs.values())
+        total_users = len(user_costs)
 
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'organization_id': organization_id,
-                'user_id': user_id,
                 'start_date': start_date,
                 'end_date': end_date,
-                'total_cost': total_cost,
-                'usage_count': usage_count
+                'total_organization_cost': total_org_cost,
+                'total_users': total_users,
+                'user_costs': user_costs_list
             })
         }
 

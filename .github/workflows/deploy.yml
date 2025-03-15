@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - get_function
+      - get_all_costomers
   workflow_dispatch:
 
 env:
@@ -12,6 +12,8 @@ env:
   STACK_NAME: chatgpt-usage-tracker
   LAMBDA_ZIP: lambda-package.zip
   GET_COSTS_ZIP: get-costs-package.zip
+  GET_ORG_COSTS_ZIP: get-org-costs-package.zip
+  REGISTER_ORG_ZIP: register-org-package.zip
 
 jobs:
   test-and-deploy:
@@ -50,12 +52,16 @@ jobs:
           # Create temporary directories for packaging
           mkdir -p package/track
           mkdir -p package/costs
+          mkdir -p package/org-costs
+          mkdir -p package/register-org
 
           # Copy Lambda functions to their respective directories
           cp lambda_function.py package/track/
           cp get_costs_function.py package/costs/
+          cp get_org_costs_function.py package/org-costs/
+          cp register_org_function.py package/register-org/
 
-          # Install dependencies for both functions
+          # Install dependencies for all functions
           cd package/track
           pip install \
             boto3==1.28.38 \
@@ -67,9 +73,21 @@ jobs:
             boto3==1.28.38 \
             python-json-logger==2.0.7 \
             -t .
+
+          cd ../org-costs
+          pip install \
+            boto3==1.28.38 \
+            python-json-logger==2.0.7 \
+            -t .
+
+          cd ../register-org
+          pip install \
+            boto3==1.28.38 \
+            python-json-logger==2.0.7 \
+            -t .
           cd ../..
 
-          # Remove unnecessary files from both packages
+          # Remove unnecessary files from all packages
           find package -type d -name "__pycache__" -exec rm -rf {} +
           find package -type d -name "*.dist-info" -exec rm -rf {} +
           find package -type d -name "*.egg-info" -exec rm -rf {} +
@@ -79,6 +97,10 @@ jobs:
           zip -r ../../${{ env.LAMBDA_ZIP }} ./*
           cd ../costs
           zip -r ../../${{ env.GET_COSTS_ZIP }} ./*
+          cd ../org-costs
+          zip -r ../../${{ env.GET_ORG_COSTS_ZIP }} ./*
+          cd ../register-org
+          zip -r ../../${{ env.REGISTER_ORG_ZIP }} ./*
           cd ../..
 
           # Show contents for debugging
@@ -86,17 +108,27 @@ jobs:
           unzip -l ${{ env.LAMBDA_ZIP }}
           echo "Contents of costs package:"
           unzip -l ${{ env.GET_COSTS_ZIP }}
+          echo "Contents of org-costs package:"
+          unzip -l ${{ env.GET_ORG_COSTS_ZIP }}
+          echo "Contents of register-org package:"
+          unzip -l ${{ env.REGISTER_ORG_ZIP }}
 
           # Set S3 keys with timestamp
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           S3_KEY="deployments/$TIMESTAMP/${{ env.LAMBDA_ZIP }}"
           COSTS_S3_KEY="deployments/$TIMESTAMP/${{ env.GET_COSTS_ZIP }}"
+          ORG_COSTS_S3_KEY="deployments/$TIMESTAMP/${{ env.GET_ORG_COSTS_ZIP }}"
+          REGISTER_ORG_S3_KEY="deployments/$TIMESTAMP/${{ env.REGISTER_ORG_ZIP }}"
           echo "LAMBDA_S3_KEY=$S3_KEY" >> $GITHUB_ENV
           echo "GET_COSTS_S3_KEY=$COSTS_S3_KEY" >> $GITHUB_ENV
+          echo "GET_ORG_COSTS_S3_KEY=$ORG_COSTS_S3_KEY" >> $GITHUB_ENV
+          echo "REGISTER_ORG_S3_KEY=$REGISTER_ORG_S3_KEY" >> $GITHUB_ENV
 
           # Upload to S3
           aws s3 cp ${{ env.LAMBDA_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/$S3_KEY
           aws s3 cp ${{ env.GET_COSTS_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/$COSTS_S3_KEY
+          aws s3 cp ${{ env.GET_ORG_COSTS_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/$ORG_COSTS_S3_KEY
+          aws s3 cp ${{ env.REGISTER_ORG_ZIP }} s3://${{ secrets.AWS_S3_BUCKET }}/$REGISTER_ORG_S3_KEY
 
           # Verify uploads
           aws s3api head-object --bucket ${{ secrets.AWS_S3_BUCKET }} --key $S3_KEY || {
@@ -105,6 +137,14 @@ jobs:
           }
           aws s3api head-object --bucket ${{ secrets.AWS_S3_BUCKET }} --key $COSTS_S3_KEY || {
             echo "Failed to verify get costs function upload"
+            exit 1
+          }
+          aws s3api head-object --bucket ${{ secrets.AWS_S3_BUCKET }} --key $ORG_COSTS_S3_KEY || {
+            echo "Failed to verify get org costs function upload"
+            exit 1
+          }
+          aws s3api head-object --bucket ${{ secrets.AWS_S3_BUCKET }} --key $REGISTER_ORG_S3_KEY || {
+            echo "Failed to verify register org function upload"
             exit 1
           }
           echo "S3 uploads verified successfully"
@@ -128,6 +168,8 @@ jobs:
           echo "DeploymentBucket: ${{ secrets.AWS_S3_BUCKET }}"
           echo "DeploymentPackageKey: ${{ env.LAMBDA_S3_KEY }}"
           echo "GetCostsPackageKey: ${{ env.GET_COSTS_S3_KEY }}"
+          echo "GetOrgCostsPackageKey: ${{ env.GET_ORG_COSTS_S3_KEY }}"
+          echo "RegisterOrgPackageKey: ${{ env.REGISTER_ORG_S3_KEY }}"
 
           aws cloudformation deploy \
             --template-file template.yaml \
@@ -136,4 +178,6 @@ jobs:
             --parameter-overrides \
               DeploymentBucket=${{ secrets.AWS_S3_BUCKET }} \
               DeploymentPackageKey=${{ env.LAMBDA_S3_KEY }} \
-              GetCostsPackageKey=${{ env.GET_COSTS_S3_KEY }}
+              GetCostsPackageKey=${{ env.GET_COSTS_S3_KEY }} \
+              GetOrgCostsPackageKey=${{ env.GET_ORG_COSTS_S3_KEY }} \
+              RegisterOrgPackageKey=${{ env.REGISTER_ORG_S3_KEY }}

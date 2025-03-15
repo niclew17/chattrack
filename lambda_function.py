@@ -14,13 +14,83 @@ logger.setLevel(logging.INFO)
 region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
 dynamodb = boto3.resource('dynamodb', region_name=region)
 table_name = os.environ.get('DYNAMODB_TABLE', 'chatgpt_usage_tracking')
+org_table_name = os.environ.get('ORG_TABLE_NAME', 'chatgpt_organizations')
 table = dynamodb.Table(table_name)
+org_table = dynamodb.Table(org_table_name)
 
-# Add authorization check
 def authorize_request(event, organization_id):
-    # For a public API where organizations provide their own IDs,
-    # we don't need to validate the caller's identity
-    return True
+    """
+    Validate the auth token against the organization ID.
+    Returns True if authorized, False otherwise.
+    """
+    try:
+        # Log the full event for debugging
+        logger.info(f"Full event: {json.dumps(event)}")
+        
+        # Get the Authorization header
+        headers = event.get('headers', {})
+        logger.info(f"Headers received: {json.dumps(headers)}")
+        
+        if not headers:
+            logger.error("No headers present")
+            return False
+
+        # Handle different possible header key formats
+        auth_header = None
+        for key in headers:
+            if key.lower() == 'authorization' or key.lower() == '"authorization"':
+                auth_header = headers[key]
+                break
+
+        if not auth_header:
+            logger.error("No Authorization header present")
+            return False
+
+        # Clean up the auth token - remove quotes and extra spaces
+        auth_token = auth_header.replace('"', '').strip()
+        if auth_token.lower().startswith('bearer '):
+            auth_token = auth_token[7:].strip()
+
+        logger.info(f"Cleaned auth token: {auth_token}")
+        logger.info(f"Organization table name: {org_table_name}")
+
+        # Query the organization table using the auth token index
+        try:
+            response = org_table.query(
+                IndexName='AuthTokenIndex',
+                KeyConditionExpression='auth_token = :token',
+                ExpressionAttributeValues={':token': auth_token}
+            )
+            logger.info(f"DynamoDB query response: {json.dumps(response)}")
+        except Exception as e:
+            logger.error(f"DynamoDB query error: {str(e)}")
+            return False
+
+        # Check if we found a matching organization
+        if not response.get('Items'):
+            logger.error("No organization found for the provided auth token")
+            return False
+
+        # Verify the organization ID matches
+        org = response['Items'][0]
+        logger.info(f"Found organization: {json.dumps(org)}")
+        
+        if org.get('organization_id') != organization_id:
+            logger.error(f"Organization ID mismatch. Expected: {organization_id}, Found: {org.get('organization_id')}")
+            return False
+
+        # Verify the organization is active
+        if org.get('status') != 'active':
+            logger.error("Organization is not active")
+            return False
+
+        logger.info("Authorization successful")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during authorization: {str(e)}")
+        logger.error(f"Full error details: {str(e.__dict__)}")
+        return False
 
 # Simplified function that always returns True (no rate limiting)
 def check_rate_limits(organization_id):

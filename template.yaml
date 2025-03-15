@@ -229,6 +229,38 @@ Resources:
     Properties:
       Name: ChatGPT Usage Tracking API
       Description: API for tracking ChatGPT usage
+      ApiKeySourceType: HEADER
+
+  # API Key
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: ApiStage
+    Properties:
+      Name: ChatGPTUsageTrackerApiKey
+      Description: API Key for ChatGPT Usage Tracker
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref ApiGateway
+          StageName: Prod
+
+  # Usage Plan
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: ApiStage
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGateway
+          Stage: Prod
+      Description: Usage plan for ChatGPT Usage Tracker API
+      UsagePlanName: ChatGPTUsageTrackerPlan
+
+  # Associate API Key with Usage Plan
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref UsagePlan
 
   # Track Usage Resource and Method
   ApiResource:
@@ -415,6 +447,7 @@ Resources:
       ResourceId: !Ref DeleteOrgResource
       HttpMethod: POST
       AuthorizationType: NONE
+      ApiKeyRequired: true
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
@@ -454,3 +487,7 @@ Outputs:
   DynamoDBTableName:
     Description: Name of the DynamoDB table
     Value: !Ref TableName
+
+  ApiKey:
+    Description: API Key for accessing the endpoints
+    Value: !Ref ApiKey

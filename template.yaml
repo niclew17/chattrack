@@ -201,6 +201,26 @@ Resources:
           POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
           LOG_LEVEL: INFO
 
+  # Lambda Function for Organization Deletion
+  DeleteOrgFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentPackageKey
+      Handler: delete_org_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref OrgTableName
+          POWERTOOLS_SERVICE_NAME: chatgpt-usage-tracker
+          LOG_LEVEL: INFO
+
   # API Gateway
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
@@ -376,6 +396,40 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/register-organization
 
+  # API Gateway Resource and Method for Organization Deletion
+  DeleteOrgResource:
+    Type: AWS::ApiGateway::Resource
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: delete-organization
+
+  DeleteOrgMethod:
+    Type: AWS::ApiGateway::Method
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref DeleteOrgResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteOrgFunction.Arn}/invocations
+
+  DeleteOrgLambdaPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DeleteOrgFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/delete-organization
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL for the ChatGPT usage tracking function
@@ -392,6 +446,10 @@ Outputs:
   RegisterOrgApiEndpoint:
     Description: API Gateway endpoint URL for registering organizations
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/register-organization"
+
+  DeleteOrgApiEndpoint:
+    Description: API Gateway endpoint URL for deleting organizations
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/delete-organization"
 
   DynamoDBTableName:
     Description: Name of the DynamoDB table
